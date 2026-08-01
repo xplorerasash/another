@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SafeChat-AI</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="app">
+    <header class="app-header">
+      <h1>SafeChat-AI</h1>
+      <p>A safety-first chatbot with moderation, severity analysis, and respectful conversation.</p>
+    </header>
+
+    <main id="chat-window" class="chat-window"></main>
+
+    <form id="chat-form" class="chat-form">
+      <input
+        id="message-input"
+        type="text"
+        placeholder="Type a message..."
+        autocomplete="off"
+        required
+      />
+      <button type="submit">Send</button>
+    </form>
+  </div>
+
+  <script>
+    const chatWindow = document.getElementById("chat-window");
+    const form = document.getElementById("chat-form");
+    const input = document.getElementById("message-input");
+
+    function addMessage(text, sender, meta) {
+      const bubble = document.createElement("div");
+      bubble.className = `bubble ${sender}`;
+      bubble.textContent = text;
+      chatWindow.appendChild(bubble);
+
+      if (meta) {
+        const metaEl = document.createElement("div");
+        metaEl.className = "meta";
+        metaEl.textContent = meta;
+        chatWindow.appendChild(metaEl);
+      }
+
+      chatWindow.scrollTop = chatWindow.scrollHeight;
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const message = input.value.trim();
+      if (!message) return;
+
+      addMessage(message, "user");
+      input.value = "";
+
+      try {
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message }),
+        });
+        const data = await response.json();
+
+        if (data.allowed) {
+          const meta = data.severity && data.severity.label !== "safe"
+            ? `severity: ${data.severity.label} (${data.severity.score})`
+            : "";
+          addMessage(data.reply, "bot", meta);
+        } else {
+          const meta = data.severity
+            ? `severity: ${data.severity.label} (${data.severity.score})`
+            : "";
+          addMessage(data.reply, "bot warning", meta);
+        }
+      } catch (err) {
+        addMessage("Something went wrong reaching the server.", "bot warning");
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+version: "3.9"
+
+services:
+  safechat-api:
+    build: .
+    container_name: safechat-api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./models:/app/models
+    environment:
+      - MODERATION_MODEL_BACKEND=bert
+    restart: unless-stopped

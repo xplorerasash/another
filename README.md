@@ -1,0 +1,190 @@
+# SafeChat-AI
+
+**An AI-Powered Harmful Speech Detection and Moderation Chatbot.**
+
+SafeChat-AI uses a **two-layer architecture** that separates safety moderation
+from conversation generation:
+
+1. **Safety & Moderation Layer** — a fine-tuned BERT model classifies every
+   message as Safe or Unsafe, predicts severity (mild / moderate / severe),
+   blocks harmful content, tracks violations, and suggests respectful
+   alternatives.
+2. **Conversation Layer** — an intent-matching engine generates natural
+   responses to safe messages. Every generated response is also re-checked
+   by the moderation model before being shown.
+
+## Architecture
+
+```
+User Message
+    |
+Fine-tuned BERT (bert-base-uncased) Harmful Speech Detection
+    |
+Safe or Unsafe?
+    |
+If Unsafe:
+  - Predict Severity
+  - Block Message
+  - Increase Violation Count
+  - Show Warning
+  - Suggest Respectful Alternative
+    |
+If Safe:
+  - Send to Conversation Response Generator
+  - Generate Chatbot Response
+  - Check Response with BERT Moderation
+  - If Safe → Display
+  - If Unsafe → Use Safe Fallback
+```
+
+## Project Structure
+
+```
+SafeChat-AI/
+├── app.py                   # Streamlit web interface
+├── admin_app.py             # Streamlit admin dashboard
+├── api.py                   # FastAPI REST API (JWT auth, rate limiting)
+├── chatbot.py               # Main chatbot class (re-exports chatbot_impl)
+├── chatbot_impl.py           # Core message-processing pipeline
+├── moderation_model.py       # BERT (unitary/toxic-bert) / sklearn model loader
+├── moderation_engine.py      # Safe/Unsafe classification & severity analysis
+├── conversation_engine.py    # Intent-based response generation
+├── violation_manager.py      # Violation tracking & temporary blocking
+├── response_filter.py        # Re-checks chatbot responses for harmful content
+├── train.py                  # Train the sklearn baseline model
+├── evaluate.py               # Evaluate model on test split
+├── requirements.txt
+├── Dockerfile + docker-compose.yml
+├── README.md
+│
+├── dataset/
+│   └── labeled.csv           # Training data
+│
+├── models/
+│   ├── cyberbullying_model.joblib   # Trained sklearn baseline
+│   ├── bert_cyberbully/             # Fine-tuned bert-base-uncased
+│   └── violations.json              # Runtime violation state
+│
+├── utils/
+│   ├── preprocess.py          # Text cleaning (Unicode-aware)
+│   ├── severity.py            # Severity scoring (keyword + model)
+│   ├── suggestion.py          # Safe alternative suggestions
+│   ├── keywords.py            # Multilingual keyword lists
+│
+├── tests/
+│   └── test_chatbot_flow.py   # Pipeline integration tests
+│
+├── scripts/
+│   ├── retrain.py             # Fine-tune bert-base-uncased
+│   ├── evaluate_models.py     # Compare BERT vs sklearn baselines
+│   └── prepare_dataset.py     # Data preparation utilities
+├── .github/workflows/ci.yml   # GitHub Actions CI pipeline
+├── static/style.css
+├── templates/index.html
+├── notebooks/
+└── screenshots/
+```
+
+## Setup
+
+```bash
+python -m venv venv
+venv\Scripts\activate          # Windows
+pip install -r requirements.txt
+```
+
+## Usage
+
+### Streamlit Web App (recommended)
+
+```bash
+streamlit run app.py
+```
+
+### Terminal Chatbot
+
+```bash
+python chatbot.py.new
+```
+
+### REST API (FastAPI)
+
+```bash
+uvicorn api:app --reload
+```
+
+Then visit `http://localhost:8000` for the web UI, or use the API endpoints:
+
+```bash
+# Register a new user
+curl -X POST http://localhost:8000/api/register \
+  -H "Content-Type: application/json" \
+  -d '{"username": "test", "password": "test123"}'
+
+# Login
+curl -X POST http://localhost:8000/api/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "test", "password": "test123"}'
+
+# Chat (use the token from login)
+curl -X POST http://localhost:8000/api/chat \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <TOKEN>" \
+  -d '{"message": "Hello!"}'
+```
+
+### Admin Dashboard
+
+```bash
+streamlit run admin_app.py
+```
+
+### Train the sklearn baseline
+
+```bash
+python train.py
+```
+
+### Fine-tune BERT model
+
+```bash
+python scripts/retrain.py
+```
+
+### Docker
+
+```bash
+docker compose up --build
+```
+
+### Run Tests
+
+```bash
+pytest tests/ -v
+```
+
+## Key Features
+
+- **BERT-based harmful speech detection** with confidence scores
+- **Severity classification**: safe, mild, moderate, severe
+- **Respectful alternative suggestions** for flagged messages
+- **Violation tracking** with temporary user blocking (3 violations / hour)
+- **Response filtering** — chatbot-generated replies are also moderated
+- **Modular design** — swap the conversation engine for an LLM without
+  changing the safety layer
+- **Model evaluation** scripts for comparing BERT vs classical baselines
+
+## Example Interactions
+
+**User:** Hi, how are you?
+**SafeChat-AI:** Hello! I'm doing well, thank you for asking. How can I help
+you today?
+
+**User:** What is machine learning?
+**SafeChat-AI:** Machine learning is a branch of artificial intelligence that
+allows computers to learn patterns from data and make predictions or decisions.
+
+**User:** You are stupid!
+**SafeChat-AI:** ⚠️ Your message was blocked because it contains offensive
+language. Severity: Moderate. Please use respectful language. Suggested
+alternative: I disagree with your response.
