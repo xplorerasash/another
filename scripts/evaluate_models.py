@@ -50,8 +50,8 @@ def main():
     }
 
     Path('models').mkdir(parents=True, exist_ok=True)
-    Path('models/eval_report.json').write_text(json.dumps(report, indent=2))
-    print('Saved evaluation report to models/eval_report.json')
+    Path('models/baselines_report.json').write_text(json.dumps(report, indent=2))
+    print('Saved baseline comparison to models/baselines_report.json')
 
 
 if __name__ == '__main__':

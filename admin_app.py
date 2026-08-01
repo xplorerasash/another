@@ -47,8 +47,8 @@ with col1:
 
 with col2:
     st.subheader("Model Info")
-    st.markdown("**Default Model:** `unitary/toxic-bert`")
-    st.markdown("**Fine-tuned Model:** `models/bert_cyberbully`")
+    st.markdown("**Primary Model:** `models/bert_cyberbully` (fine-tuned BERT)")
+    st.markdown("**Fallback Model:** `unitary/toxic-bert` (hub) / sklearn baseline")
     st.markdown("---")
     st.subheader("Quick Actions")
     if st.button("View API Logs (last 100 lines)"):

@@ -21,7 +21,10 @@ except Exception:
 
 try:
   from transformers import pipeline
-  _sentiment_pipeline = pipeline("sentiment-analysis")
+  _sentiment_pipeline = pipeline(
+    "sentiment-analysis",
+    model="distilbert/distilbert-base-uncased-finetuned-sst-2-english",
+  )
 except Exception:
   _sentiment_pipeline = None
 

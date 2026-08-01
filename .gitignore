@@ -6,6 +6,7 @@ venv/
 models/*.joblib
 models/violations.json
 models/test_violations.json
+models/users.json
 models/moderation_logs.jsonl
 models/checkpoint-*/
 models/bert_cyberbully/checkpoint-*/

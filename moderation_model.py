@@ -5,6 +5,9 @@ shape used by `moderation_engine.py`. It supports two backends:
 
 - BERT (preferred): uses `transformers` to load a fine-tuned sequence
   classification model and returns a probability for the "harmful" class.
+  The locally fine-tuned model in `models/bert_cyberbully` is used by
+  default when it is present and complete; otherwise it falls back to the
+  `unitary/toxic-bert` hub model.
 - sklearn (fallback): preserves the original behavior loading a `joblib`
   pipeline produced by `train.py`.
 
@@ -13,8 +16,7 @@ installed the class will transparently fall back to the sklearn pipeline.
 """
 import logging
 from pathlib import Path
-from typing import Dict, Optional, List
-import math
+from typing import Dict, Optional
 import os
 
 from utils.preprocess import clean_text
@@ -25,6 +27,36 @@ MAX_INPUT_LENGTH = 2000
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_JOBLIB_PATH = BASE_DIR / "models" / "cyberbullying_model.joblib"
 DEFAULT_HF_MODEL = "unitary/toxic-bert"
+DEFAULT_LOCAL_MODEL = BASE_DIR / "models" / "bert_cyberbully"
+
+
+def _is_complete_local_model(path: Path) -> bool:
+    """A locally fine-tuned model is only usable if its weights, config,
+    and tokenizer were all saved alongside each other."""
+    return (
+        (path / "config.json").exists()
+        and (path / "model.safetensors").exists()
+        and (path / "tokenizer.json").exists()
+    )
+
+
+def _resolve_model_id(model_id: Optional[str]) -> str:
+    """Return an absolute model path for a relative path, else the input.
+
+    With no explicit override, prefer the locally fine-tuned model
+    (models/bert_cyberbully) when it exists and is complete; otherwise fall
+    back to the well-established `unitary/toxic-bert` hub model.
+    """
+    if not model_id:
+        if _is_complete_local_model(DEFAULT_LOCAL_MODEL):
+            return str(DEFAULT_LOCAL_MODEL)
+        return DEFAULT_HF_MODEL
+    path = Path(model_id)
+    if not path.is_absolute():
+        candidate = BASE_DIR / path
+        if candidate.exists():
+            return str(candidate)
+    return model_id
 
 
 class ModerationModel:
@@ -83,7 +115,8 @@ class ModerationModel:
         from transformers import AutoTokenizer, AutoModelForSequenceClassification
         import torch
 
-        model_id = self.hf_model_id or os.getenv('MODERATION_HF_MODEL', DEFAULT_HF_MODEL)
+        model_id = _resolve_model_id(self.hf_model_id or os.getenv('MODERATION_HF_MODEL', ''))
+        self._hf_model_id = model_id
         logger.info("Loading HF model: %s", model_id)
         self._hf_tokenizer = AutoTokenizer.from_pretrained(model_id)
         self._hf_model = AutoModelForSequenceClassification.from_pretrained(model_id)
@@ -95,13 +128,13 @@ class ModerationModel:
     # ---- Public API ----
     def predict(self, text: str) -> Dict:
         if not isinstance(text, str) or not text.strip():
-            return {"label": "safe", "is_harmful": False, "confidence": 0.0}
+            return {"label": "safe", "is_harmful": False, "confidence": 0.0, "model_used": "none"}
         if len(text) > MAX_INPUT_LENGTH:
             logger.warning("Input truncated from %d to %d chars", len(text), MAX_INPUT_LENGTH)
             text = text[:MAX_INPUT_LENGTH]
         cleaned = clean_text(text)
         if not cleaned.strip():
-            return {"label": "safe", "is_harmful": False, "confidence": 0.0}
+            return {"label": "safe", "is_harmful": False, "confidence": 0.0, "model_used": "none"}
 
         use_bert = False
         if self._backend == 'sklearn':
@@ -140,7 +173,7 @@ class ModerationModel:
                     confidence = max_prob
                     label = 'harmful' if max_prob >= 0.65 else 'safe'
 
-                return {"label": label, "is_harmful": label == 'harmful', "confidence": confidence}
+                return {"label": label, "is_harmful": label == 'harmful', "confidence": confidence, "model_used": self._hf_model_id}
 
         self._load_sklearn()
         proba = self._sklearn.predict_proba([cleaned])[0]
@@ -148,7 +181,7 @@ class ModerationModel:
         harmful_index = classes.index(1) if 1 in classes else (len(classes) - 1)
         confidence = float(proba[harmful_index])
         predicted_class = int(self._sklearn.predict([cleaned])[0])
-        return {"label": "harmful" if predicted_class == 1 else "safe", "is_harmful": predicted_class == 1, "confidence": confidence}
+        return {"label": "harmful" if predicted_class == 1 else "safe", "is_harmful": predicted_class == 1, "confidence": confidence, "model_used": str(self.joblib_path)}
 
 
 _default_model = None
@@ -158,8 +191,10 @@ def get_model() -> ModerationModel:
     """Lazily-created module-level singleton.
 
     When transformers/torch are available and no explicit backend override
-    is set, uses the unitary/toxic-bert HuggingFace model for classification.
-    Falls back to the sklearn pipeline otherwise.
+    is set, uses the locally fine-tuned BERT model (models/bert_cyberbully)
+    when it is present and complete, otherwise the unitary/toxic-bert
+    HuggingFace model for classification. Falls back to the sklearn
+    pipeline otherwise.
     """
     global _default_model
     if _default_model is None:

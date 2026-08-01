@@ -70,9 +70,9 @@ def main():
     p_bert, r_bert, f1_bert, _ = precision_recall_fscore_support(y_test, preds_bert, average='binary')
     results['bert'] = {'precision': p_bert, 'recall': r_bert, 'f1': f1_bert, 'accuracy': accuracy_score(y_test, preds_bert)}
 
-    # Save report
+    # Save report (separate file so it doesn't clobber retrain.py's report)
     Path('models').mkdir(parents=True, exist_ok=True)
-    report_path = Path('models') / 'eval_report.json'
+    report_path = Path('models') / 'baselines_report.json'
     report = {'results': results}
     report_path.write_text(json.dumps(report, indent=2))
 

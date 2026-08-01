@@ -2,16 +2,23 @@
 
 Fixes:
 - Uses bert-base-uncased (matches project title)
-- Balances the training data
-- Trains for 3 epochs with evaluation
+- Trains on the balanced dataset (dataset/balanced.csv) so the model does
+  not over-predict "harmful" on normal conversational text
+- Trains for 3 epochs with evaluation (f1-based model selection)
 - Compatible with transformers 5.x
 """
 import argparse
+import json
 from pathlib import Path
 
 import pandas as pd
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, precision_recall_fscore_support, roc_auc_score
+from sklearn.metrics import (
+    accuracy_score,
+    precision_recall_fscore_support,
+    roc_auc_score,
+    confusion_matrix,
+)
 from datasets import Dataset
 from transformers import (
     AutoTokenizer,
@@ -25,10 +32,22 @@ def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--model_name", default="bert-base-uncased")
     p.add_argument("--output_dir", default="models/bert_cyberbully")
-    p.add_argument("--epochs", type=int, default=1)
+    p.add_argument("--epochs", type=int, default=3)
     p.add_argument("--batch_size", type=int, default=32)
     p.add_argument("--max_length", type=int, default=64)
-    p.add_argument("--max_train_samples", type=int, default=500)
+    p.add_argument(
+        "--data_csv",
+        type=str,
+        default="dataset/balanced.csv",
+        help="Balanced dataset. Falls back to dataset/labeled.csv if missing.",
+    )
+    p.add_argument(
+        "--max_train_samples",
+        type=int,
+        default=0,
+        help="Cap on training samples per class. 0 = use all available.",
+    )
+    p.add_argument("--eval_report", default="models/eval_report.json")
     return p.parse_args()
 
 
@@ -50,7 +69,16 @@ def main():
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    df = pd.read_csv("dataset/labeled.csv").dropna(subset=["text", "label"])
+    data_csv = Path(args.data_csv)
+    if not data_csv.exists():
+        fallback = Path("dataset/labeled.csv")
+        if fallback.exists():
+            print(f"{data_csv} not found; falling back to {fallback}")
+            data_csv = fallback
+        else:
+            raise FileNotFoundError(f"No dataset found at {args.data_csv} or {fallback}")
+
+    df = pd.read_csv(data_csv).dropna(subset=["text", "label"])
     df["label"] = df["label"].astype(int)
     print(f"Total samples: {len(df)}")
     print(f"Class 0 (safe): {(df['label']==0).sum()}, Class 1 (harmful): {(df['label']==1).sum()}")
@@ -61,7 +89,9 @@ def main():
 
     safe = train_df[train_df["label"] == 0]
     harmful = train_df[train_df["label"] == 1]
-    min_count = min(len(safe), len(harmful), args.max_train_samples // 2)
+    min_count = min(len(safe), len(harmful))
+    if args.max_train_samples and args.max_train_samples > 0:
+        min_count = min(min_count, args.max_train_samples // 2)
     balanced = pd.concat([
         safe.sample(n=min_count, random_state=42),
         harmful.sample(n=min_count, random_state=42),
@@ -95,6 +125,7 @@ def main():
         per_device_train_batch_size=args.batch_size,
         per_device_eval_batch_size=args.batch_size,
         logging_steps=50,
+        seed=42,
         report_to="none",
     )
 
@@ -116,9 +147,47 @@ def main():
     ds_test = Dataset.from_pandas(test_df[["text", "label"]].reset_index(drop=True))
     ds_test = ds_test.map(tokenize, batched=True)
     ds_test = ds_test.map(lambda x: {"label": int(x["label"])})
-    results = trainer.evaluate(ds_test)
-    for k, v in results.items():
-        print(f"  {k}: {v:.4f}" if isinstance(v, float) else f"  {k}: {v}")
+
+    import numpy as np
+    preds = trainer.predict(ds_test)
+    logits = preds.predictions
+    y_true = np.asarray(preds.label_ids)
+    y_pred = logits.argmax(-1)
+    probs = np.exp(logits - logits.max(axis=-1, keepdims=True))
+    probs = probs / probs.sum(axis=-1, keepdims=True)
+
+    acc = accuracy_score(y_true, y_pred)
+    p, r, f1, _ = precision_recall_fscore_support(y_true, y_pred, average="binary")
+    auc = roc_auc_score(y_true, probs[:, 1])
+    cm = confusion_matrix(y_true, y_pred)
+    tn, fp, fn, tp = cm.ravel()
+
+    print(f"  accuracy:  {acc:.4f}")
+    print(f"  precision: {p:.4f}")
+    print(f"  recall:    {r:.4f}")
+    print(f"  f1:        {f1:.4f}")
+    print(f"  roc_auc:   {auc:.4f}")
+    print("  confusion matrix (rows=actual [safe, harmful], cols=predicted [safe, harmful]):")
+    print(cm)
+
+    report = {
+        "dataset": str(data_csv),
+        "samples": {"train": len(train_df), "val": len(val_df), "test": len(test_df)},
+        "accuracy": round(acc, 4),
+        "precision": round(p, 4),
+        "recall": round(r, 4),
+        "f1": round(f1, 4),
+        "roc_auc": round(auc, 4),
+        "confusion_matrix": {
+            "tn_safe_correct": int(tn),
+            "fp_safe_misclassified": int(fp),
+            "fn_harmful_missed": int(fn),
+            "tp_harmful_correct": int(tp),
+        },
+    }
+    report_path = Path(args.eval_report)
+    report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    print(f"\nSaved eval report to {report_path}")
 
 
 if __name__ == "__main__":
