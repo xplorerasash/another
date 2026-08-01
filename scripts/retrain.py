@@ -9,6 +9,8 @@ Fixes:
 """
 import argparse
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 import pandas as pd
@@ -70,6 +72,11 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
 
     data_csv = Path(args.data_csv)
+    if not data_csv.exists() or data_csv.name == "labeled.csv":
+        print("Generating balanced dataset from dataset/labeled.csv...")
+        subprocess.run([sys.executable, "scripts/build_balanced_dataset.py"], check=True)
+        data_csv = Path("dataset/balanced.csv")
+
     if not data_csv.exists():
         fallback = Path("dataset/labeled.csv")
         if fallback.exists():
@@ -183,6 +190,10 @@ def main():
             "fp_safe_misclassified": int(fp),
             "fn_harmful_missed": int(fn),
             "tp_harmful_correct": int(tp),
+        },
+        "classification_summary": {
+            "safe_support": int(tn + fp),
+            "harmful_support": int(fn + tp),
         },
     }
     report_path = Path(args.eval_report)
