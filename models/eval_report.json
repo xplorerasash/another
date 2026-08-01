@@ -1,8 +1,6 @@
 {
-  "dataset": "dataset\\balanced.csv",
+  "dataset": "C:\\Users\\sarke\\OneDrive\\Documents\\app\\another\\processed\\balanced_test.csv",
   "samples": {
-    "train": 12240,
-    "val": 2160,
     "test": 3600
   },
   "accuracy": 0.9733,
@@ -15,5 +13,9 @@
     "fp_safe_misclassified": 24,
     "fn_harmful_missed": 72,
     "tp_harmful_correct": 1728
+  },
+  "classification_summary": {
+    "safe_support": 1800,
+    "harmful_support": 1800
   }
 }

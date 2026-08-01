@@ -52,7 +52,7 @@ SafeChat-AI/
 ├── violation_manager.py      # Violation tracking & temporary blocking
 ├── response_filter.py        # Re-checks chatbot responses for harmful content
 ├── train.py                  # Train the sklearn baseline model
-├── evaluate.py               # Evaluate model on test split
+├── evaluate.py               # Evaluate fine-tuned BERT model on test split
 ├── requirements.txt
 ├── Dockerfile + docker-compose.yml
 ├── README.md
@@ -74,10 +74,13 @@ SafeChat-AI/
 │
 ├── tests/
 │   ├── test_chatbot_flow.py   # Chatbot pipeline tests
-│   └── test_integration.py    # Full flow: conversation, blocking, violations
+│   ├── test_integration.py    # Full flow: conversation, blocking, violations
+│   └── test_model_quality.py  # Dataset balance + inference behavior tests
 │
 ├── scripts/
+│   ├── build_balanced_dataset.py  # Build 9k/9k balanced.csv
 │   ├── retrain.py             # Fine-tune bert-base-uncased
+│   ├── train_and_evaluate.py  # Build dataset → retrain → evaluate in one step
 │   ├── evaluate_models.py     # Compare BERT vs sklearn baselines
 │   └── prepare_dataset.py     # Data preparation utilities
 ├── .github/workflows/ci.yml   # GitHub Actions CI pipeline
@@ -162,6 +165,13 @@ selection, then reports accuracy, precision, recall, F1, ROC-AUC and a
 confusion matrix on a held-out test split (saved to
 `models/eval_report.json`). The final model is stored in
 `models/bert_cyberbully/`.
+
+To run the whole flow (build balanced dataset, retrain BERT, evaluate) in
+one step:
+
+```bash
+python scripts/train_and_evaluate.py
+```
 
 The moderation layer loads `models/bert_cyberbully` automatically when it
 is present and complete, and falls back to `unitary/toxic-bert` (or the

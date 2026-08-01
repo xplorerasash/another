@@ -94,6 +94,11 @@ def main():
     train_df, val_df = train_test_split(train_df, test_size=0.15, random_state=42, stratify=train_df["label"])
     print(f"Train: {len(train_df)}, Val: {len(val_df)}, Test: {len(test_df)}")
 
+    test_path = Path("processed/balanced_test.csv")
+    test_path.parent.mkdir(parents=True, exist_ok=True)
+    test_df[["text", "label"]].to_csv(test_path, index=False)
+    print(f"Saved test split to {test_path}")
+
     safe = train_df[train_df["label"] == 0]
     harmful = train_df[train_df["label"] == 1]
     min_count = min(len(safe), len(harmful))

@@ -10,8 +10,7 @@ models/users.json
 models/moderation_logs.jsonl
 models/checkpoint-*/
 models/bert_cyberbully/checkpoint-*/
-models/hf_cyberbully/checkpoint-*/
-models/**/model.safetensors
+models/hf_cyberbully/
 processed/*.csv
 tmp_*
 *.py.new
