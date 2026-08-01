@@ -166,6 +166,15 @@ confusion matrix on a held-out test split (saved to
 `models/eval_report.json`). The final model is stored in
 `models/bert_cyberbully/`.
 
+A **quality gate** is enforced before a retrained model ships: it is
+trained into a staging directory and only promoted to
+`models/bert_cyberbully` if its test-set metrics clear the minimum
+thresholds in `model_quality.py` (acc/prec ≥ 0.92, recall ≥ 0.90,
+F1 ≥ 0.91, ROC-AUC ≥ 0.95). A failed retrain keeps the previous model and
+exits non-zero, so the pipeline stops automatically instead of shipping a
+degraded model. `models/eval_report.json` records the gate result under
+`quality_gate`.
+
 To run the whole flow (build balanced dataset, retrain BERT, evaluate) in
 one step:
 

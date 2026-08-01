@@ -17,5 +17,16 @@
   "classification_summary": {
     "safe_support": 1800,
     "harmful_support": 1800
+  },
+  "quality_gate": {
+    "passed": true,
+    "minimum_thresholds": {
+      "accuracy": 0.92,
+      "precision": 0.92,
+      "recall": 0.9,
+      "f1": 0.91,
+      "roc_auc": 0.95
+    },
+    "failures": {}
   }
 }

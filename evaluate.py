@@ -3,8 +3,12 @@
 The test split is produced by `scripts/retrain.py` (saved to
 `processed/balanced_test.csv`) so the numbers here match the report written
 during training. Results are written to `models/eval_report.json`.
+
+A quality gate (model_quality.py) enforces minimum thresholds: if any
+metric falls below its minimum the script exits non-zero.
 """
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -18,6 +22,8 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
+
+from model_quality import DEFAULT_THRESHOLDS, check_quality
 
 BASE_DIR = Path(__file__).resolve().parent
 MODEL_PATH = BASE_DIR / "models" / "bert_cyberbully"
@@ -100,8 +106,28 @@ def evaluate() -> None:
             "harmful_support": int(fn + tp),
         },
     }
+
+    metrics = {"accuracy": acc, "precision": p, "recall": r, "f1": f1, "roc_auc": auc}
+    passed, failures = check_quality(metrics)
+    report["quality_gate"] = {
+        "passed": bool(passed),
+        "minimum_thresholds": dict(DEFAULT_THRESHOLDS),
+        "failures": {
+            name: {"actual": None if actual is None else round(actual, 4), "minimum": minimum}
+            for name, (actual, minimum) in failures.items()
+        },
+    }
+
     REPORT_PATH.write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(f"\nSaved evaluation report to {REPORT_PATH}")
+
+    if not passed:
+        print("\n[FAIL] Model does not meet quality thresholds:")
+        for name, (actual, minimum) in failures.items():
+            actual_str = "missing" if actual is None else f"{actual:.4f}"
+            print(f"  - {name}: {actual_str} < {minimum:.4f}")
+        sys.exit(1)
+    print("\n[PASS] Model meets all quality thresholds.")
 
 
 if __name__ == "__main__":

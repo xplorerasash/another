@@ -6,9 +6,14 @@ Fixes:
   not over-predict "harmful" on normal conversational text
 - Trains for 3 epochs with evaluation (f1-based model selection)
 - Compatible with transformers 5.x
+- Enforces a quality gate: the model is trained into a staging dir and
+  only promoted to the final output dir if test-set metrics clear the
+  thresholds in model_quality.py. A failed retrain keeps the previous
+  model and exits non-zero.
 """
 import argparse
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -28,6 +33,12 @@ from transformers import (
     TrainingArguments,
     Trainer,
 )
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from model_quality import DEFAULT_THRESHOLDS, check_quality
 
 
 def parse_args():
@@ -68,8 +79,11 @@ def compute_metrics(eval_pred):
 
 def main():
     args = parse_args()
-    output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    final_dir = Path(args.output_dir)
+    staging_dir = final_dir.parent / (final_dir.name + "_staging")
+    if staging_dir.exists():
+        shutil.rmtree(staging_dir)
+    staging_dir.mkdir(parents=True, exist_ok=True)
 
     data_csv = Path(args.data_csv)
     if not data_csv.exists() or data_csv.name == "labeled.csv":
@@ -126,7 +140,7 @@ def main():
     model = AutoModelForSequenceClassification.from_pretrained(args.model_name, num_labels=2)
 
     ta = TrainingArguments(
-        output_dir=str(output_dir),
+        output_dir=str(staging_dir),
         eval_strategy="epoch",
         save_strategy="epoch",
         save_total_limit=2,
@@ -150,10 +164,10 @@ def main():
     )
 
     trainer.train()
-    trainer.save_model(str(output_dir))
-    tokenizer.save_pretrained(str(output_dir))
+    trainer.save_model(str(staging_dir))
+    tokenizer.save_pretrained(str(staging_dir))
 
-    print(f"\nModel saved to {output_dir}")
+    print(f"\nModel trained in staging dir: {staging_dir}")
 
     print("\n--- Test Set Evaluation ---")
     ds_test = Dataset.from_pandas(test_df[["text", "label"]].reset_index(drop=True))
@@ -201,9 +215,37 @@ def main():
             "harmful_support": int(fn + tp),
         },
     }
+
+    metrics = {"accuracy": acc, "precision": p, "recall": r, "f1": f1, "roc_auc": auc}
+    passed, failures = check_quality(metrics)
+    report["quality_gate"] = {
+        "passed": bool(passed),
+        "minimum_thresholds": dict(DEFAULT_THRESHOLDS),
+        "failures": {
+            name: {"actual": None if actual is None else round(actual, 4), "minimum": minimum}
+            for name, (actual, minimum) in failures.items()
+        },
+    }
+
     report_path = Path(args.eval_report)
     report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(f"\nSaved eval report to {report_path}")
+
+    if passed:
+        print("\n[PASS] Model meets all quality thresholds. Accepting model.")
+        if final_dir.exists():
+            shutil.rmtree(final_dir)
+        shutil.move(str(staging_dir), str(final_dir))
+        print(f"Model accepted and saved to {final_dir}")
+        return
+
+    print("\n[FAIL] Model rejected. Metrics below minimum thresholds:")
+    for name, (actual, minimum) in failures.items():
+        actual_str = "missing" if actual is None else f"{actual:.4f}"
+        print(f"  - {name}: {actual_str} < {minimum:.4f}")
+    print(f"Keeping previously accepted model at {final_dir} (if present).")
+    shutil.rmtree(staging_dir, ignore_errors=True)
+    sys.exit(1)
 
 
 if __name__ == "__main__":

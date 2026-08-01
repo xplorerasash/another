@@ -11,6 +11,7 @@ models/moderation_logs.jsonl
 models/checkpoint-*/
 models/bert_cyberbully/checkpoint-*/
 models/hf_cyberbully/
+models/*_staging/
 processed/*.csv
 tmp_*
 *.py.new
