@@ -7,10 +7,13 @@ okay to send?" decisions -- both for user input and for the chatbot's own
 generated replies (see response_filter.py).
 """
 from typing import Dict
+import logging
 
 from moderation_model import get_model
 from utils.severity import compute_severity
 from utils.suggestion import suggest_alternative
+
+logger = logging.getLogger("safechat.moderation_engine")
 
 # extras: language detection, keyword filtering, sentiment
 try:
@@ -42,6 +45,7 @@ def analyze_message(text: str) -> Dict:
     """
     model = get_model()
     prediction = model.predict(text)
+    logger.info("Moderation decision by model: %s", prediction["model_used"])
 
     # language detection
     lang = "en"
@@ -74,6 +78,7 @@ def analyze_message(text: str) -> Dict:
       "language": lang,
       "is_harmful": is_harmful,
       "model_confidence": prediction["confidence"],
+      "model_used": prediction["model_used"],
       "severity_score": severity_info["score"],
       "severity_label": severity_info["label"],
       "keyword_hits": kw_hits,

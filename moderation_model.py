@@ -43,20 +43,39 @@ def _is_complete_local_model(path: Path) -> bool:
 def _resolve_model_id(model_id: Optional[str]) -> str:
     """Return an absolute model path for a relative path, else the input.
 
-    With no explicit override, prefer the locally fine-tuned model
+    With no explicit override, load the locally fine-tuned model
     (models/bert_cyberbully) when it exists and is complete; otherwise fall
-    back to the well-established `unitary/toxic-bert` hub model.
+    back to the well-established `unitary/toxic-bert` hub model with a
+    clear warning so users know they are not on the fine-tuned weights.
     """
-    if not model_id:
+    if model_id:
+        path = Path(model_id)
+        if not path.is_absolute():
+            candidate = BASE_DIR / path
+            if candidate.exists():
+                return str(candidate)
+        return model_id
+
+    if DEFAULT_LOCAL_MODEL.exists():
         if _is_complete_local_model(DEFAULT_LOCAL_MODEL):
+            logger.info("Using locally fine-tuned model: %s", DEFAULT_LOCAL_MODEL)
             return str(DEFAULT_LOCAL_MODEL)
+        logger.warning(
+            "Local fine-tuned model at %s is incomplete "
+            "(expected config.json, model.safetensors, tokenizer.json); "
+            "falling back to hub model %s.",
+            DEFAULT_LOCAL_MODEL,
+            DEFAULT_HF_MODEL,
+        )
         return DEFAULT_HF_MODEL
-    path = Path(model_id)
-    if not path.is_absolute():
-        candidate = BASE_DIR / path
-        if candidate.exists():
-            return str(candidate)
-    return model_id
+
+    logger.warning(
+        "Local fine-tuned model not found at %s; falling back to hub model %s. "
+        "Run `python scripts/train_and_evaluate.py` to build it.",
+        DEFAULT_LOCAL_MODEL,
+        DEFAULT_HF_MODEL,
+    )
+    return DEFAULT_HF_MODEL
 
 
 class ModerationModel:
@@ -143,11 +162,21 @@ class ModerationModel:
             use_bert = True
         else:
             use_bert = self._has_transformers()
+            if not use_bert:
+                logger.warning(
+                    "transformers/torch not available; falling back to sklearn model %s",
+                    self.joblib_path,
+                )
 
         if use_bert:
             try:
                 self._load_hf()
             except Exception:
+                logger.warning(
+                    "BERT backend failed to load; falling back to sklearn model %s",
+                    self.joblib_path,
+                    exc_info=True,
+                )
                 use_bert = False
 
         if use_bert:
